@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PUBLIC_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-now}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-operator@rendycrm.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-password}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-false}
+      TELEGRAM_CLIENT_WEBHOOK_SECRET: ${TELEGRAM_CLIENT_WEBHOOK_SECRET:-}
+      TELEGRAM_OPERATOR_WEBHOOK_SECRET: ${TELEGRAM_OPERATOR_WEBHOOK_SECRET:-}
+    restart: unless-stopped

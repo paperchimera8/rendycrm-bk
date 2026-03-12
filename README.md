@@ -25,6 +25,17 @@ docker build -t rendycrm-bk .
 docker run --rm -p 3000:3000 --env-file .env rendycrm-bk
 ```
 
+## Docker Compose
+
+```bash
+docker compose up -d --build
+```
+
+По умолчанию:
+
+- `PUBLIC_PORT=3000`
+- `PORT=3000`
+
 ## CORS
 
 - `CORS_ALLOWED_ORIGINS=*` — разрешить все origin.
