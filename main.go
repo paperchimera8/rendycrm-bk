@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type config struct {
 	AdminEmail                   string
 	AdminPassword                string
 	CORSAllowedOrigins           []string
+	CORSAllowCredentials         bool
 	ClientWebhookSecret          string
 	OperatorWebhookSecret        string
 }
@@ -41,7 +43,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.Use(gin.Recovery(), requestLogger(), corsMiddleware(cfg.CORSAllowedOrigins))
+	router.Use(gin.Recovery(), requestLogger(), corsMiddleware(cfg.CORSAllowedOrigins, cfg.CORSAllowCredentials))
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -132,6 +134,7 @@ func loadConfig() config {
 		AdminEmail:            envOrDefault("ADMIN_EMAIL", "operator@rendycrm.local"),
 		AdminPassword:         envOrDefault("ADMIN_PASSWORD", "password"),
 		CORSAllowedOrigins:    splitCSV(envOrDefault("CORS_ALLOWED_ORIGINS", "*")),
+		CORSAllowCredentials:  envOrDefaultBool("CORS_ALLOW_CREDENTIALS", false),
 		ClientWebhookSecret:   os.Getenv("TELEGRAM_CLIENT_WEBHOOK_SECRET"),
 		OperatorWebhookSecret: os.Getenv("TELEGRAM_OPERATOR_WEBHOOK_SECRET"),
 	}
@@ -157,6 +160,21 @@ func splitCSV(raw string) []string {
 	return out
 }
 
+func envOrDefaultBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
 func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -165,23 +183,37 @@ func requestLogger() gin.HandlerFunc {
 	}
 }
 
-func corsMiddleware(origins []string) gin.HandlerFunc {
+func corsMiddleware(origins []string, allowCredentials bool) gin.HandlerFunc {
 	allowAll := len(origins) == 0 || (len(origins) == 1 && origins[0] == "*")
-	allowed := map[string]struct{}{}
-	for _, o := range origins {
-		allowed[o] = struct{}{}
-	}
 
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
+		allowedOrigin := ""
+
 		if allowAll {
-			c.Header("Access-Control-Allow-Origin", "*")
-		} else if _, ok := allowed[origin]; ok {
-			c.Header("Access-Control-Allow-Origin", origin)
+			if allowCredentials {
+				allowedOrigin = origin
+			} else {
+				allowedOrigin = "*"
+			}
+		} else if originAllowed(origin, origins) {
+			allowedOrigin = origin
+		}
+
+		if allowedOrigin != "" {
+			c.Header("Access-Control-Allow-Origin", allowedOrigin)
 			c.Header("Vary", "Origin")
 		}
+		if allowCredentials && allowedOrigin != "" && allowedOrigin != "*" {
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		requestHeaders := strings.TrimSpace(c.GetHeader("Access-Control-Request-Headers"))
+		if requestHeaders == "" {
+			requestHeaders = "Authorization, Content-Type, X-Telegram-Bot-Api-Secret-Token"
+		}
+		c.Header("Access-Control-Allow-Headers", requestHeaders)
+		c.Header("Access-Control-Max-Age", "600")
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
@@ -189,6 +221,41 @@ func corsMiddleware(origins []string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+func originAllowed(origin string, patterns []string) bool {
+	if strings.TrimSpace(origin) == "" {
+		return false
+	}
+	originURL, err := url.Parse(origin)
+	if err != nil || originURL.Scheme == "" || originURL.Hostname() == "" {
+		return false
+	}
+	host := originURL.Hostname()
+
+	for _, raw := range patterns {
+		pattern := strings.TrimSpace(raw)
+		if pattern == "" {
+			continue
+		}
+		if pattern == "*" || pattern == origin {
+			return true
+		}
+
+		parts := strings.SplitN(pattern, "://*.", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		scheme := parts[0]
+		suffix := parts[1]
+		if scheme != originURL.Scheme {
+			continue
+		}
+		if host == suffix || strings.HasSuffix(host, "."+suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func issueToken(secret, email string, ttl time.Duration) (string, time.Time, error) {
@@ -258,4 +325,3 @@ func authMiddleware(secret string) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
