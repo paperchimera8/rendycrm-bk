@@ -2,6 +2,9 @@
 
 Минимальный backend на Gin для отдельного деплоя.
 
+Этот репозиторий не использует PostgreSQL и Redis.
+Для `rendycrm-bk` не нужны `POSTGRES_DSN`, `REDIS_ADDR`, `REDIS_PASSWORD`.
+
 ## Endpoints
 
 - `GET /health`
@@ -35,6 +38,14 @@ docker compose up -d --build
 
 - `PUBLIC_PORT=3000`
 - `PORT=3000`
+
+Основные переменные:
+
+- `AUTH_SECRET`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+- `CORS_ALLOWED_ORIGINS`
+- `CORS_ALLOW_CREDENTIALS`
 
 ## CORS
 
